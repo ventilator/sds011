@@ -12,14 +12,21 @@
 # TODO:     Enable sleep on start
 #           Add datetime to UI 
 
-from __future__ import print_function
+# 2018-05-05
+# ventilator
+# tweaks to port to python 3
+
 import serial, struct, time, pylab, csv, datetime
-from Tkinter import *
+from tkinter import *
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+csv_file = '/home/pi/data.csv'
+csv_file = 'data.csv'
 
 ser = serial.Serial()
 #ser.port = sys.argv[1]
 ser.port = "/dev/ttyUSB0"
+ser.port = "COM3"
 ser.baudrate = 9600
 
 ser.open()
@@ -29,16 +36,16 @@ class App:
         def __init__(self, master):
             frame = Frame(master)
             frame.pack()
-            Label(frame, text="PM 2.5: ", font=("Courier",10, "bold"), width=8).grid(row=0, column=0, columnspan=3)
-            Label(frame, text=u"µg/m\u00b3 ", font=("Courier",10, "bold"), width=6).grid(row=0, column=3)
-            Label(frame, text="PM  10: ", font=("Courier",10, "bold"), width=8).grid(row=1, column=0, columnspan=3)
-            Label(frame, text=u"µg/m\u00b3 ", font=("Courier",10, "bold"),width=6).grid(row=1, column=3)
+            Label(frame, text="PM 2.5: ").grid(row=0, columnspan=2)
+            Label(frame, text="µg/m^3: ").grid(row=0, column=3)
+            Label(frame, text="PM  10: ").grid(row=1, columnspan=2)
+            Label(frame, text="µg/m^3: ").grid(row=1, column=3)
             
             self.result_pm25 = DoubleVar()
-            Label(frame, textvariable=self.result_pm25, font=("Courier",10, "normal"), width=5).grid(row=0, column=2)
+            Label(frame, textvariable=self.result_pm25).grid(row=0, column=2)
 
             self.result_pm10 = DoubleVar()
-            Label(frame, textvariable=self.result_pm10, font=("Courier",10, "normal"), width=5).grid(row=1, column=2)
+            Label(frame, textvariable=self.result_pm10).grid(row=1, column=2)
 
             button0 = Button(frame, text="Start", command=self.sensor_wake)
             button0.grid(row=2, column=0)
@@ -64,10 +71,12 @@ class App:
 
             self.ax = fig.add_subplot(111)
             self.ax.grid(True)
+            
             self.ax.set_title("PM2.5 and PM10")
             self.ax.set_xlabel("Time (seconds)")
-            self.ax.set_ylabel(u"PM (ug/m\u00b3)")
-            self.ax.axis([0,300,0,60])
+            self.ax.set_ylabel("PM (ug/m^3)")
+            self.ax.axis([0,300,0,180])
+            self.ax.autoscale_view(True,True,True)
             
         # 0xAA, 0xB4, 0x06, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x06, 0xAB
         def sensor_wake(self):
@@ -92,7 +101,7 @@ class App:
             '\xab'] #tail
 
             for b in bytes:
-                ser.write(b)
+                ser.write(b.encode('latin-1'))
         
         # xAA, 0xB4, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0x05, 0xAB
         def sensor_sleep(self):
@@ -117,15 +126,16 @@ class App:
             '\xab'] #tail
 
             for b in bytes:
-                ser.write(b)
+                ser.write(b.encode('latin-1'))
 
         def process_frame(self, d):
             #dump_data(d) #debug
             r = struct.unpack('<HHxxBBB', d[2:])
             pm25 = r[0]/10.0
             pm10 = r[1]/10.0
-            checksum = sum(ord(v) for v in d[2:8])%256
-            #print("PM 2.5: {} μg/m^3  PM 10: {} μg/m^3 CRC={}".format(pm25, pm10, "OK" if (checksum==r[2] and r[3]==0xab) else "NOK"))
+#            checksum = sum(ord(v) for v in d[2:8])%256
+            checksum = sum((v) for v in d[2:8])%256
+            print("PM 2.5: {} μg/m^3  PM 10: {} μg/m^3 CRC={}".format(pm25, pm10, "OK" if (checksum==r[2] and r[3]==0xab) else "NOK"))
             self.result_pm25.set(pm25)
             self.result_pm10.set(pm10)
             data = [pm25, pm10]
@@ -136,7 +146,7 @@ class App:
             while byte != "\xaa":
                 byte = ser.read(size=1)
                 d = ser.read(size=10)
-                if d[0] == "\xc0":
+                if d[0] == ord("\xc0"):
                     data = self.process_frame(byte + d)
                     return data
 
@@ -146,21 +156,23 @@ class App:
             y2 = []
             for i in range(0,330,30): # change time interval here, if required
                 self.sensor_wake()
-                time.sleep(10)
+                time.sleep(1)
                 pm = self.sensor_read()
                 if pm is not None:
                     x.append(i)
                     y1.append(pm[0])
                     y2.append(pm[1])
-                    with open('/home/pi/data.csv', 'ab') as csvfile:
-                        file = csv.writer(csvfile, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                        file.writerow([datetime.datetime.now().replace(microsecond=0).isoformat().replace('T', ' '), pm[0], pm[1]])
-                        csvfile.close()
+#                    with open(csv_file, 'ab') as csvfile:
+#                        file = csv.writer(csvfile, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+#                        file.writerow([datetime.datetime.now().replace(microsecond=0).isoformat().replace('T', ' '), pm[0], pm[1])])
+#                        csvfile.close()
                     line1, = self.ax.plot(x,y1,'r-x')
                     line2, = self.ax.plot(x,y2,'b-x')
+                    self.ax.relim()
+                    self.ax.autoscale_view(True,True,True)
                     self.canvas.draw()
-                self.sensor_sleep()
-                time.sleep(20)
+#                self.sensor_sleep()
+#                time.sleep(20)
 
         def quit(self):
             root.destroy()
